@@ -50,6 +50,22 @@ def safe_read_csv(source, **kwargs) -> pd.DataFrame:
         source.seek(0)
     return pd.read_csv(source, encoding_errors='replace', **kwargs)
 
+def safe_read_excel(source, **kwargs) -> pd.DataFrame:
+    """
+    Robust Excel loader (.xlsx, .xls) that handles openpyxl dependency gracefully.
+    """
+    try:
+        if hasattr(source, 'seek'):
+            source.seek(0)
+        return pd.read_excel(source, **kwargs)
+    except ImportError as e:
+        if 'openpyxl' in str(e).lower():
+            raise ImportError(
+                "Missing 'openpyxl' package required for reading Excel files (.xlsx). "
+                "Please run: pip install openpyxl or double-click install_openpyxl.bat"
+            )
+        raise e
+
 def safe_read_csv_chunks(file_path: str, batch_size: int, **kwargs):
     """
     Returns a chunk iterator for CSV streaming, auto-handling non-UTF-8 encodings.

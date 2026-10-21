@@ -1,11 +1,80 @@
+# ==============================
+# Environment variables and secrets
+# ==============================
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Google Cloud credentials and secret files
+credentials.json
+secrets.json
+service-account*.json
+*service-account-key*.json
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+*.pem
+*.key
+
+# ==============================
+# Python cache and compiled files
+# ==============================
 __pycache__/
 *.py[cod]
 *$py.class
-.DS_Store
-.vscode/
-.idea/
+
+# ==============================
+# Virtual environments
+# ==============================
+.venv/
 venv/
-.env
+env/
+ENV/
+
+# ==============================
+# Testing and code analysis
+# ==============================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# ==============================
+# Build and distribution files
+# ==============================
+build/
+dist/
+*.egg-info/
+
+# ==============================
+# Logs and temporary files
+# ==============================
+*.log
+*.tmp
+*.bak
+
+# ==============================
+# Operating system files
+# ==============================
+.DS_Store
+Thumbs.db
+
+# ==============================
+# IDE settings
+# ==============================
+.idea/
+
+# ==============================
+# Generated application files
+# Uncomment these if your app creates them locally
+# ==============================
+# uploads/
+# outputs/
+# generated_reports/
+
+# Locally uploaded datasets
 uploaded_datasets/
-uploads/persistent_*
-*.parquet
+
+sample_data/*_cached.parquet

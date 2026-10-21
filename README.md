@@ -95,10 +95,13 @@ flowchart TD
 │   └── sample_sales.csv
 └── utils/                      # Modular Business Logic & Processing Engines
     ├── __init__.py
-    ├── ai_assistant.py         # Conversational Assistant with RAG & Gemini API
+    ├── ai_assistant.py         # Conversational Assistant with RAG, DuckDB & Gemini API
     ├── batch_processor.py      # High-Throughput Batch Streamer & Multi-Encoding Parser
     ├── cleaner.py              # 5-Stage Defensive Cleaning DAG & Telemetry Tracker
+    ├── cleaning_studio.py      # Interactive Live Data Cleaning Studio & Feature Engineering
     ├── dashboard.py            # Plotly Visualization Components & Custom Sandbox
+    ├── duckdb_engine.py        # Embedded In-Memory DuckDB Analytical SQL Engine
+    ├── fuzzy_engine.py         # Classical Mamdani Fuzzy Inference System for Severity
     ├── ml_engine.py            # K-Means, PCA, & Isolation Forest Anomaly Detection
     ├── query_engine.py         # Natural Language Rule-Based Dataframe Filter
     ├── rag_engine.py           # Vector Indexing, Semantic Chunking & Similarity Search
@@ -171,11 +174,11 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 | Category | Technologies / Libraries |
 | :--- | :--- |
 | **Frontend & UI** | Streamlit, HTML5, Custom Enterprise CSS |
-| **Data Processing** | Pandas, NumPy, PyArrow |
+| **Data Processing & SQL** | DuckDB, Pandas, NumPy, PyArrow |
 | **Machine Learning** | Scikit-Learn (K-Means, PCA, IsolationForest, StandardScaler) |
-| **Vector Search & RAG** | Scikit-Learn TF-IDF, Cosine Similarity, FAISS-CPU |
+| **Vector Search & RAG** | Scikit-Learn TF-IDF, Cosine Similarity, Dense Semantic In-Memory Store |
 | **Data Visualization** | Plotly Express, Plotly Graph Objects |
-| **LLM & Generative AI**| Google Generative AI (`google-generativeai`), LangChain |
+| **LLM & Generative AI**| Google Generative AI (`google-generativeai`) |
 
 ---
 

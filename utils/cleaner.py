@@ -30,7 +30,7 @@ def detect_and_clean(df: pd.DataFrame, col_types: dict) -> tuple[pd.DataFrame, d
     dag_steps.append({
         "step_num": "01",
         "title": "Step 1: Duplicate Scan & Purge",
-        "tag": "POLARS_DROP_DUPLICATES",
+        "tag": "DEDUPLICATE_ROWS",
         "desc": f"{n_duplicates:,} exact match composite keys dropped across telemetry tuple.",
         "badge": f"PURGED {n_duplicates:,} ROWS",
         "latency": f"{s1_elapsed:.1f} ms"
