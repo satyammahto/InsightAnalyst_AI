@@ -1,0 +1,8 @@
+{
+  "name": "InsightAnalyst AI",
+  "description": "Enterprise Data Diagnostics, Autonomous RAG Analytics & Automated ML Engine",
+  "version": "1.0.0",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
