@@ -641,8 +641,12 @@ if data_source == "Practice Datasets":
         selected_dataset_name = "marketing_attribution.csv"
         friendly_dataset_title = "Marketing Performance"
         
-    if os.path.exists(active_file_path):
+    prac_cache_key = f"practice_raw_{selected_dataset_name}"
+    if prac_cache_key in st.session_state:
+        raw_df = st.session_state[prac_cache_key]
+    elif os.path.exists(active_file_path):
         raw_df = safe_read_csv(active_file_path)
+        st.session_state[prac_cache_key] = raw_df
 
 else:
     uploaded_files = st.sidebar.file_uploader(
@@ -652,83 +656,117 @@ else:
     )
     
     if uploaded_files:
-        try:
-            saved_paths = []
-            file_names = []
-            for u_file in uploaded_files:
-                f_name = u_file.name
-                safe_name = f"uploaded_{f_name.replace(' ', '_')}"
-                f_path = os.path.join(UPLOAD_DIR, safe_name)
-                stream_file_to_disk(u_file, f_path)
-                saved_paths.append(f_path)
-                file_names.append(f_name)
+        upload_sig = f"{len(uploaded_files)}_" + "_".join(f"{f.name}_{getattr(f, 'size', 0)}" for f in uploaded_files)
+        
+        # Fast path: already loaded and parsed in current session
+        if st.session_state.get('cached_upload_sig') == upload_sig and st.session_state.get('cached_upload_df') is not None:
+            raw_df = st.session_state['cached_upload_df']
+            selected_dataset_name = st.session_state.get('cached_upload_name', uploaded_files[0].name)
+            friendly_dataset_title = selected_dataset_name
+            active_file_path = st.session_state.get('cached_upload_path')
+        else:
+            try:
+                saved_paths = []
+                file_names = []
+                for u_file in uploaded_files:
+                    f_name = u_file.name
+                    safe_name = f"uploaded_{f_name.replace(' ', '_')}"
+                    f_path = os.path.join(UPLOAD_DIR, safe_name)
+                    # Only stream to disk if file doesn't already exist with matching size
+                    if not (os.path.exists(f_path) and os.path.getsize(f_path) == getattr(u_file, 'size', -1)):
+                        stream_file_to_disk(u_file, f_path)
+                    saved_paths.append(f_path)
+                    file_names.append(f_name)
 
-            if len(saved_paths) == 1:
-                active_file_path = saved_paths[0]
-                selected_dataset_name = file_names[0]
-                friendly_dataset_title = file_names[0]
-                with st.spinner(f"Loading '{file_names[0]}' (this may take a few moments for large files)..."):
-                    if active_file_path.endswith('.csv'):
-                        raw_df = safe_read_csv(active_file_path)
-                    elif active_file_path.endswith('.parquet'):
-                        raw_df = pd.read_parquet(active_file_path)
+                def _fast_load_file(path: str) -> pd.DataFrame:
+                    parquet_cache = path + ".parquet"
+                    if path.endswith('.parquet'):
+                        return pd.read_parquet(path)
+                    elif os.path.exists(parquet_cache) and os.path.getmtime(parquet_cache) >= os.path.getmtime(path):
+                        return pd.read_parquet(parquet_cache)
+                    elif path.endswith('.csv'):
+                        df_res = safe_read_csv(path)
                     else:
-                        raw_df = safe_read_excel(active_file_path)
-            else:
-                st.sidebar.markdown(f"**{len(saved_paths)} Files Uploaded**")
-                multi_action = st.sidebar.radio(
-                    "Combine Files:",
-                    ["🔗 Merge All Files", "📄 Pick One File"],
-                    key="multi_file_strategy"
-                )
+                        df_res = safe_read_excel(path)
+                    # Cache Excel/CSV to Parquet for instant subsequent reloads
+                    try:
+                        df_res.to_parquet(parquet_cache, index=False)
+                    except Exception:
+                        pass
+                    return df_res
 
-                if multi_action == "🔗 Merge All Files":
-                    dfs = []
-                    with st.spinner("Merging uploaded files..."):
-                        for f_path, f_name in zip(saved_paths, file_names):
-                            try:
-                                if f_path.endswith('.csv'):
-                                    temp_df = safe_read_csv(f_path)
-                                elif f_path.endswith('.parquet'):
-                                    temp_df = pd.read_parquet(f_path)
-                                else:
-                                    temp_df = safe_read_excel(f_path)
-                                temp_df['_source_file'] = f_name
-                                dfs.append(temp_df)
-                            except Exception as ex:
-                                st.sidebar.warning(f"Could not parse {f_name}: {ex}")
-
-                    if dfs:
-                        raw_df = pd.concat(dfs, ignore_index=True)
-                        combined_path = os.path.join(UPLOAD_DIR, "merged_multi_upload.csv")
-                        raw_df.to_csv(combined_path, index=False)
-                        active_file_path = combined_path
-                        selected_dataset_name = f"Merged ({len(dfs)} files)"
-                        friendly_dataset_title = selected_dataset_name
-                        st.sidebar.success(f"Merged {len(dfs)} files into {len(raw_df):,} rows!")
+                if len(saved_paths) == 1:
+                    active_file_path = saved_paths[0]
+                    selected_dataset_name = file_names[0]
+                    friendly_dataset_title = file_names[0]
+                    with st.spinner(f"Loading '{file_names[0]}' (fast cache enabled)..."):
+                        raw_df = _fast_load_file(active_file_path)
                 else:
-                    chosen_idx = st.sidebar.selectbox("Active File:", range(len(file_names)), format_func=lambda i: file_names[i])
-                    active_file_path = saved_paths[chosen_idx]
-                    selected_dataset_name = file_names[chosen_idx]
-                    friendly_dataset_title = file_names[chosen_idx]
-                    with st.spinner(f"Loading '{file_names[chosen_idx]}'..."):
-                        if active_file_path.endswith('.csv'):
-                            raw_df = safe_read_csv(active_file_path)
-                        elif active_file_path.endswith('.parquet'):
-                            raw_df = pd.read_parquet(active_file_path)
-                        else:
-                            raw_df = safe_read_excel(active_file_path)
+                    st.sidebar.markdown(f"**{len(saved_paths)} Files Uploaded**")
+                    multi_action = st.sidebar.radio(
+                        "Combine Files:",
+                        ["🔗 Merge All Files", "📄 Pick One File"],
+                        key="multi_file_strategy"
+                    )
 
-            if raw_df is not None:
-                raw_df.to_csv(PERSISTENT_FILE, index=False)
-                with open(PERSISTENT_META, 'w', encoding='utf-8') as f:
-                    f.write(selected_dataset_name)
-                with open(PERSISTENT_SOURCE, 'w', encoding='utf-8') as f:
-                    f.write("Upload Custom File")
-        except Exception as e:
-            st.sidebar.error(f"Error reading upload: {e}")
+                    if multi_action == "🔗 Merge All Files":
+                        dfs = []
+                        with st.spinner("Merging uploaded files..."):
+                            for f_path, f_name in zip(saved_paths, file_names):
+                                try:
+                                    temp_df = _fast_load_file(f_path)
+                                    temp_df['_source_file'] = f_name
+                                    dfs.append(temp_df)
+                                except Exception as ex:
+                                    st.sidebar.warning(f"Could not parse {f_name}: {ex}")
+
+                        if dfs:
+                            raw_df = pd.concat(dfs, ignore_index=True)
+                            combined_path = os.path.join(UPLOAD_DIR, "merged_multi_upload.csv")
+                            raw_df.to_csv(combined_path, index=False)
+                            active_file_path = combined_path
+                            selected_dataset_name = f"Merged ({len(dfs)} files)"
+                            friendly_dataset_title = selected_dataset_name
+                            st.sidebar.success(f"Merged {len(dfs)} files into {len(raw_df):,} rows!")
+                    else:
+                        chosen_idx = st.sidebar.selectbox("Active File:", range(len(file_names)), format_func=lambda i: file_names[i])
+                        active_file_path = saved_paths[chosen_idx]
+                        selected_dataset_name = file_names[chosen_idx]
+                        friendly_dataset_title = file_names[chosen_idx]
+                        with st.spinner(f"Loading '{file_names[chosen_idx]}'..."):
+                            raw_df = _fast_load_file(active_file_path)
+
+                if raw_df is not None:
+                    try:
+                        raw_df.to_parquet(PERSISTENT_FILE + ".parquet", index=False)
+                    except Exception:
+                        raw_df.to_csv(PERSISTENT_FILE, index=False)
+                    with open(PERSISTENT_META, 'w', encoding='utf-8') as f:
+                        f.write(selected_dataset_name)
+                    with open(PERSISTENT_SOURCE, 'w', encoding='utf-8') as f:
+                        f.write("Upload Custom File")
+                    st.session_state['cached_upload_sig'] = upload_sig
+                    st.session_state['cached_upload_df'] = raw_df
+                    st.session_state['cached_upload_name'] = selected_dataset_name
+                    st.session_state['cached_upload_path'] = active_file_path
+            except Exception as e:
+                st.sidebar.error(f"Error reading upload: {e}")
     else:
-        if os.path.exists(PERSISTENT_FILE):
+        parquet_persist = PERSISTENT_FILE + ".parquet"
+        if os.path.exists(parquet_persist):
+            try:
+                active_file_path = parquet_persist
+                raw_df = pd.read_parquet(parquet_persist)
+                if os.path.exists(PERSISTENT_META):
+                    with open(PERSISTENT_META, 'r', encoding='utf-8') as f:
+                        selected_dataset_name = f.read().strip()
+                else:
+                    selected_dataset_name = "uploaded_custom_dataset.csv"
+                friendly_dataset_title = selected_dataset_name
+                st.sidebar.info(f"Loaded: `{selected_dataset_name}`")
+            except Exception:
+                pass
+        elif os.path.exists(PERSISTENT_FILE):
             try:
                 active_file_path = PERSISTENT_FILE
                 raw_df = safe_read_csv(PERSISTENT_FILE)
@@ -742,13 +780,13 @@ else:
             except Exception:
                 pass
                 
-    if os.path.exists(PERSISTENT_FILE):
+    if os.path.exists(PERSISTENT_FILE) or os.path.exists(PERSISTENT_FILE + ".parquet"):
         if st.sidebar.button("Remove Uploaded File", key="clear_saved_custom_btn"):
             try:
-                for p in [PERSISTENT_FILE, PERSISTENT_META, PERSISTENT_SOURCE]:
+                for p in [PERSISTENT_FILE, PERSISTENT_FILE + ".parquet", PERSISTENT_META, PERSISTENT_SOURCE]:
                     if os.path.exists(p): os.remove(p)
                 st.session_state['data_source_radio'] = "Practice Datasets"
-                for k in ['chat_messages', 'active_dataset_signature', 'last_analyzed_dataset', 'nl_filter_query', 'inspect_record_select']:
+                for k in ['chat_messages', 'active_dataset_signature', 'last_analyzed_dataset', 'nl_filter_query', 'inspect_record_select', 'cached_upload_sig', 'cached_upload_df', 'cached_pipeline']:
                     if k in st.session_state:
                         del st.session_state[k]
                 st.rerun()
@@ -787,8 +825,8 @@ else:
 start_pipe_time = time.time()
 
 # Authoritative dataset signature to detect dataset uploads, replacements, or source switches
-current_dataset_signature = f"{selected_dataset_name}_{len(raw_df)}_{len(raw_df.columns)}"
-is_first_load = (st.session_state.get('active_dataset_signature') != current_dataset_signature)
+current_dataset_signature = f"{selected_dataset_name}_{len(raw_df)}_{len(raw_df.columns)}_{ingestion_mode}_{batch_size_choice}_{impute_policy}_{n_clusters_input}_{contamination_input}"
+is_first_load = (st.session_state.get('active_dataset_signature') != current_dataset_signature or 'cached_pipeline' not in st.session_state)
 
 if is_first_load:
     # Invalidate stale analytical and conversation states immediately when dataset changes
@@ -798,38 +836,58 @@ if is_first_load:
     if 'chat_messages' in st.session_state:
         del st.session_state['chat_messages']
 
-progress_box = st.empty()
-with progress_box.container():
-    p_bar = st.progress(10, text="1. Checking data structure & columns... 🔄")
-    col_types = detect_column_types(raw_df)
-    
-    p_bar.progress(35, text="2. Cleaning and standardizing values... 🔄")
-    batch_telemetry = None
-    if active_file_path and os.path.exists(active_file_path) and "Batch" in ingestion_mode:
-        def batch_callback(b_idx, total_b, cur_rows, tp, msg):
-            pct = min(65, int(35 + (b_idx / max(1, total_b)) * 30))
-            p_bar.progress(pct, text=f"Processing chunk {b_idx}/{total_b} ({tp:,.0f} rows/s)...")
+    progress_box = st.empty()
+    with progress_box.container():
+        p_bar = st.progress(10, text="1. Checking data structure & columns... 🔄")
+        col_types = detect_column_types(raw_df)
         
-        cleaned_df, cleaning_report, batch_telemetry = process_dataset_in_batches(
-            active_file_path, col_types, batch_size=batch_size_choice, progress_callback=batch_callback
-        )
-    else:
-        cleaned_df, cleaning_report = detect_and_clean(raw_df, col_types)
-    
-    p_bar.progress(70, text="3. Finding patterns and unusual records... 🔄")
-    ml_results = run_ml_analysis(cleaned_df, col_types, n_clusters=n_clusters_input, contamination=contamination_input)
-    
-    p_bar.progress(90, text="4. Creating AI insights and explanations... 🔄")
-    rag_engine = DatasetRAGEngine()
-    rag_engine.build_knowledge_base(cleaned_df, col_types, cleaning_report, ml_results, batch_telemetry)
-    
-    p_bar.progress(100, text="5. Analysis ready! ✅")
-    executive_brief = generate_executive_summary(cleaned_df, col_types, cleaning_report, ml_results, batch_telemetry, rag_engine)
+        p_bar.progress(35, text="2. Cleaning and standardizing values... 🔄")
+        batch_telemetry = None
+        if active_file_path and os.path.exists(active_file_path) and "Batch" in ingestion_mode:
+            def batch_callback(b_idx, total_b, cur_rows, tp, msg):
+                pct = min(65, int(35 + (b_idx / max(1, total_b)) * 30))
+                p_bar.progress(pct, text=f"Processing chunk {b_idx}/{total_b} ({tp:,.0f} rows/s)...")
+            
+            cleaned_df, cleaning_report, batch_telemetry = process_dataset_in_batches(
+                active_file_path, col_types, batch_size=batch_size_choice, progress_callback=batch_callback
+            )
+        else:
+            cleaned_df, cleaning_report = detect_and_clean(raw_df, col_types)
+        
+        p_bar.progress(70, text="3. Finding patterns and unusual records... 🔄")
+        ml_results = run_ml_analysis(cleaned_df, col_types, n_clusters=n_clusters_input, contamination=contamination_input)
+        
+        p_bar.progress(90, text="4. Creating AI insights and explanations... 🔄")
+        rag_engine = DatasetRAGEngine()
+        rag_engine.build_knowledge_base(cleaned_df, col_types, cleaning_report, ml_results, batch_telemetry)
+        
+        p_bar.progress(100, text="5. Analysis ready! ✅")
+        executive_brief = generate_executive_summary(cleaned_df, col_types, cleaning_report, ml_results, batch_telemetry, rag_engine)
 
-progress_box.empty()
-pipe_latency = f"{(time.time() - start_pipe_time):.2f}s"
-st.session_state['active_dataset_signature'] = current_dataset_signature
-st.session_state['last_analyzed_dataset'] = selected_dataset_name
+    progress_box.empty()
+    pipe_latency = f"{(time.time() - start_pipe_time):.2f}s"
+    st.session_state['active_dataset_signature'] = current_dataset_signature
+    st.session_state['last_analyzed_dataset'] = selected_dataset_name
+    st.session_state['cached_pipeline'] = {
+        'col_types': col_types,
+        'cleaned_df': cleaned_df,
+        'cleaning_report': cleaning_report,
+        'batch_telemetry': batch_telemetry,
+        'ml_results': ml_results,
+        'rag_engine': rag_engine,
+        'executive_brief': executive_brief,
+        'pipe_latency': pipe_latency
+    }
+else:
+    cached_p = st.session_state['cached_pipeline']
+    col_types = cached_p['col_types']
+    cleaned_df = cached_p['cleaned_df']
+    cleaning_report = cached_p['cleaning_report']
+    batch_telemetry = cached_p.get('batch_telemetry')
+    ml_results = cached_p['ml_results']
+    rag_engine = cached_p['rag_engine']
+    executive_brief = cached_p['executive_brief']
+    pipe_latency = cached_p['pipe_latency']
 
 ai_assistant = AIAssistantEngine(
     cleaned_df,
