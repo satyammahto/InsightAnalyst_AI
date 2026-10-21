@@ -2103,13 +2103,13 @@ with tab_ask:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Render Conversation History with native markdown, tables, and charts (Bug 2 Fix)
-    for msg in st.session_state['chat_messages']:
+    for idx, msg in enumerate(st.session_state['chat_messages']):
         role = msg.get('role', 'assistant')
         avatar = "✨" if role == 'assistant' else "👤"
         with st.chat_message(role, avatar=avatar):
             st.markdown(msg.get('content', ''))
             if msg.get('chart') is not None:
-                st.plotly_chart(msg['chart'], use_container_width=True)
+                st.plotly_chart(msg['chart'], use_container_width=True, key=f"chat_plotly_chart_{idx}")
             if msg.get('table') is not None:
                 st.dataframe(msg['table'], use_container_width=True)
             if msg.get('code'):
@@ -2160,7 +2160,7 @@ with tab_ask:
                     with sql_t2:
                         fig = ai_assistant.duckdb_engine.auto_visualize(res_df, title="DuckDB Query Auto-Chart")
                         if fig:
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key="duckdb_sql_auto_viz_chart")
                         else:
                             st.info("No automatic chart could be generated for this table format. Switch to 'Result Table' to view all data.")
                 else:
